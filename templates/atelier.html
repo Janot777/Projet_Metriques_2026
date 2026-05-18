@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atelier — Humidité Marseille (AreaChart)</title>
+
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #0f172a; }
+    h1 { margin-bottom: 4px; }
+    .lead { color: #475569; margin-top: 0; }
+    nav { margin: 16px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+    nav a { color: #0ea5e9; text-decoration: none; padding: 4px 10px; border: 1px solid #e2e8f0; border-radius: 999px; }
+    nav a:hover { background: #f1f5f9; }
+    .kpis { display: flex; gap: 16px; margin: 16px 0; flex-wrap: wrap; }
+    .kpi { padding: 12px 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; min-width: 140px; }
+    .kpi .label { font-size: 0.8rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+    .kpi .value { font-size: 1.4rem; font-weight: 600; color: #0f172a; }
+    #chart { width: 100%; height: 520px; }
+    #status { margin-top: 12px; color: #64748b; font-size: 0.9rem; }
+  </style>
+</head>
+
+<body>
+  <h1>Humidité relative à Marseille</h1>
+  <p class="lead">Prévisions horaires sur 7 jours — visualisation en aire (Google AreaChart).</p>
+
+  <nav>
+    <a href="/">Accueil</a>
+    <a href="/rapport">Températures (lignes)</a>
+    <a href="/histogramme">Histogramme</a>
+    <a href="/contact">Contact</a>
+  </nav>
+
+  <div class="kpis">
+    <div class="kpi"><div class="label">Min</div><div class="value" id="kpi-min">—</div></div>
+    <div class="kpi"><div class="label">Moyenne</div><div class="value" id="kpi-avg">—</div></div>
+    <div class="kpi"><div class="label">Max</div><div class="value" id="kpi-max">—</div></div>
+  </div>
+
+  <div id="chart"></div>
+  <div id="status"></div>
+
+  <script>
+    google.charts.load('current', { packages: ['corechart'] });
+    google.charts.setOnLoadCallback(init);
+
+    let cachedRows = null;
+
+    async function init() {
+      try {
+        const rows = await fetchMarseilleData();
+        cachedRows = rows;
+        renderKpis(rows);
+        drawChart(rows);
+        window.addEventListener('resize', () => {
+          if (cachedRows) drawChart(cachedRows);
+        });
+      } catch (err) {
+        document.getElementById('status').textContent = "Erreur: " + (err?.message || err);
+        console.error(err);
+      }
+    }
+
+    async function fetchMarseilleData() {
+      const res = await fetch('/marseille', { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status} sur /marseille`);
+      const json = await res.json();
+      return json.map(p => [toDate(p.datetime), Number(p.humidity_pct)])
+                 .sort((a, b) => a[0] - b[0]);
+    }
+
+    function toDate(isoLike) {
+      const [datePart, timePart] = isoLike.split('T');
+      const [y, m, d] = datePart.split('-').map(Number);
+      const [hh, mm] = timePart.split(':').map(Number);
+      return new Date(y, m - 1, d, hh, mm, 0);
+    }
+
+    function renderKpis(rows) {
+      const values = rows.map(r => r[1]);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      document.getElementById('kpi-min').textContent = `${min.toFixed(0)} %`;
+      document.getElementById('kpi-avg').textContent = `${avg.toFixed(1)} %`;
+      document.getElementById('kpi-max').textContent = `${max.toFixed(0)} %`;
+    }
+
+    function drawChart(rows) {
+      const data = new google.visualization.DataTable();
+      data.addColumn('datetime', 'Date/Heure');
+      data.addColumn('number', 'Humidité (%)');
+      data.addRows(rows);
+
+      const options = {
+        title: 'Humidité relative horaire — Marseille',
+        legend: { position: 'bottom' },
+        hAxis: { title: 'Date/Heure', format: 'dd/MM HH:mm' },
+        vAxis: { title: '% humidité', minValue: 0, maxValue: 100 },
+        areaOpacity: 0.35,
+        colors: ['#0ea5e9'],
+        explorer: { actions: ['dragToZoom', 'rightClickToReset'] }
+      };
+
+      const chart = new google.visualization.AreaChart(document.getElementById('chart'));
+      chart.draw(data, options);
+
+      document.getElementById('status').textContent =
+        `${rows.length} points chargés depuis /marseille — données api.open-meteo.com`;
+    }
+  </script>
+</body>
+</html>

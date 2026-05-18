@@ -39,6 +39,29 @@ def mongraphique():
 def histogramme():
     return render_template("histogramme.html")
 
+@app.get("/marseille")
+def api_marseille():
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        "?latitude=43.2965&longitude=5.3698&hourly=relative_humidity_2m"
+    )
+    response = requests.get(url)
+    data = response.json()
+
+    times = data.get("hourly", {}).get("time", [])
+    hums = data.get("hourly", {}).get("relative_humidity_2m", [])
+
+    n = min(len(times), len(hums))
+    result = [
+        {"datetime": times[i], "humidity_pct": hums[i]}
+        for i in range(n)
+    ]
+    return jsonify(result)
+
+@app.route("/atelier")
+def atelier():
+    return render_template("atelier.html")
+
 
 
 # Ne rien mettre après ce commentaire
