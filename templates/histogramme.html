@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Températures Paris — Histogramme</title>
+
+  <script src="https://www.gstatic.com/charts/loader.js"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+    #chart { width: 100%; height: 520px; }
+    #status { margin-top: 12px; white-space: pre-wrap; }
+    nav a { margin-right: 12px; }
+  </style>
+</head>
+
+<body>
+  <nav>
+    <a href="/">Accueil</a>
+    <a href="/rapport">Graphique (lignes)</a>
+    <a href="/atelier">Atelier</a>
+  </nav>
+  <h1>Températures journalières — Paris (histogramme)</h1>
+  <div id="chart"></div>
+  <div id="status"></div>
+
+  <script>
+    google.charts.load('current', { packages: ['corechart'] });
+    google.charts.setOnLoadCallback(init);
+
+    let cachedRows = null;
+
+    async function init() {
+      try {
+        const rows = await fetchDailyAverages();
+        cachedRows = rows;
+        drawChart(rows);
+        window.addEventListener('resize', () => {
+          if (cachedRows) drawChart(cachedRows);
+        });
+      } catch (err) {
+        showStatus("Erreur: " + (err?.message || err));
+        console.error(err);
+      }
+    }
+
+    // On agrège les valeurs horaires de /paris en moyennes journalières
+    // pour que l'histogramme reste lisible (7 colonnes au lieu de 168).
+    async function fetchDailyAverages() {
+      const res = await fetch('/paris', { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) throw new Error(`HTTP ${res.status} sur /paris`);
+
+      const json = await res.json();
+
+      const buckets = new Map();
+      for (const point of json) {
+        const day = point.datetime.split('T')[0]; // "2026-05-18"
+        const t = Number(point.temperature_c);
+        if (Number.isNaN(t)) continue;
+        if (!buckets.has(day)) buckets.set(day, { sum: 0, count: 0 });
+        const b = buckets.get(day);
+        b.sum += t;
+        b.count += 1;
+      }
+
+      return [...buckets.entries()]
+        .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+        .map(([day, { sum, count }]) => {
+          const avg = sum / count;
+          return [formatDay(day), Number(avg.toFixed(1))];
+        });
+    }
+
+    function formatDay(iso) {
+      const [y, m, d] = iso.split('-');
+      return `${d}/${m}`;
+    }
+
+    function drawChart(rows) {
+      const data = new google.visualization.DataTable();
+      data.addColumn('string', 'Jour');
+      data.addColumn('number', 'Température moyenne (°C)');
+      data.addRows(rows);
+
+      const options = {
+        title: 'Température moyenne journalière à Paris',
+        legend: { position: 'bottom' },
+        hAxis: { title: 'Jour (jj/mm)' },
+        vAxis: { title: '°C' },
+        bar: { groupWidth: '70%' }
+      };
+
+      const chart = new google.visualization.ColumnChart(document.getElementById('chart'));
+      chart.draw(data, options);
+
+      showStatus(`OK — ${rows.length} jours agrégés depuis /paris`);
+    }
+
+    function showStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+  </script>
+</body>
+</html>
